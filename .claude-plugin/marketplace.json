@@ -1,0 +1,6 @@
+{
+  "name": "claude-side-chat",
+  "owner": { "name": "JD-D3V" },
+  "metadata": { "description": "side-chat: a pane for messaging a friend from inside Claude Code." },
+  "plugins": [{ "name": "side-chat", "source": "./" }]
+}
