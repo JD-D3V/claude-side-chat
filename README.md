@@ -24,17 +24,64 @@ plugin.
 
 The "Friend chat" pane opens by itself in a new session; `/friend` opens it
 again if you close it. Type your name, then either press "Start a new chat"
-and send the code to your friend, or paste the code your friend sent you into
-"Or join with a code". The code is saved, so you enter it once.
+and send its invite code to your friend, or paste a code a friend sent you
+into "Or join with a code".
 
-When your friend writes, you get a popup in Claude and a system notification.
-"Mute" in the pane turns both off; "Copy invite code" copies your code again.
+Each chat is saved, with its key, on your computer. You enter a code once;
+after that the chat is in your list under your friend's name, and you can keep
+up to 20 of them. "‹ Chats" goes back to the list, "Remove" forgets a chat.
+
+When a friend writes, a row appears above the prompt in Claude ("Open" /
+"Dismiss"), and your computer shows a system notification, so you see it with
+Claude in front or not. "Mute" turns both off, and "Test popups" on the list
+of chats fires both so you can check them. "Copy invite code" copies a chat's
+code again.
+
+## How it is protected
+
+Messages are end-to-end encrypted. From the invite code the mod derives a
+secret key, which never leaves your computer, and a separate relay address
+that cannot be turned back into the code. Each message is sealed with
+XChaCha20-Poly1305 before it is sent, padded so its size says little about
+its length, and anything on the relay that does not open with the chat's key
+is ignored.
+
+- The relay (ntfy.sh, a free public service) sees sealed data, the relay
+  address, and when and from which network address it was posted. It cannot
+  read or change messages.
+- Anyone who has the invite code can read the chat, so share codes privately.
+- The code and key are kept in a plain file in your Claude folder
+  (`~/.claude/plugins/store/`), readable by your own user account.
+- The same key is used for the life of a chat: someone who records the sealed
+  traffic and later gets the code could read the old messages.
+- Claude does not read the chat; messages are only drawn in the pane.
+
+Both people need version 0.3.0 or later. A chat started on an earlier version
+keeps its code and moves to the encrypted format by itself.
 
 ## Good to know
 
-- Messages go through ntfy.sh, a free public relay, and are not end-to-end
-  encrypted. Anyone who has the chat code can read and post, so share the code
-  privately and keep passwords out of the chat.
-- The relay keeps messages for about 12 hours. Messages take up to about 8
-  seconds to arrive.
+- The relay keeps messages for about 12 hours, and its free tier allows about
+  250 sent messages a day per network address.
+- Messages arrive in well under a second while the pane says "Live": the mod
+  keeps one `curl` connection open to the relay in the background. Where
+  Claude cannot run commands, or there is no `curl`, it falls back to asking
+  the relay every 3 to 8 seconds and says "Checking every few seconds".
+- System notifications use `osascript` on macOS and `notify-send` on Linux.
+  On Windows, or if those fail, Claude's own notification channel is used.
 - Nothing else has to be running: only Claude, with a session open.
+
+## Testing without a friend
+
+`scripts/test-friend.ts` is a stand-in friend (it needs [Bun](https://bun.sh)).
+Make a chat just for testing with "Start a new chat", then:
+
+    bun scripts/test-friend.ts measure
+
+sends three messages and prints how long the mod took to receive each, whether
+delivery is live or polling, and how the popup went out. `listen` prints what
+you send from the pane with its timing; `send` sends one message. The script
+reads the chat's key from the mod's store, so no code is typed.
+
+The encryption code in `hooks/vendor/` is `@noble/ciphers` and `@noble/hashes`
+by Paul Miller (MIT), copied unmodified; see `hooks/vendor/README.md`.

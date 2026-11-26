@@ -1,29 +1,53 @@
+/** One message as kept in the store and drawn: already opened. */
 export type ChatMessage = {
   id: string
   time: number
   from: string
   cid: string
   text: string
+  nonce: string
 }
 
-export type ChatSetup = {
-  name: string
-  room: string
-  clientId: string
-  isMuted: boolean
+/** A saved chat. Kept in the store only: it holds the code and the key. */
+export type Contact = {
+  id: string
+  label: string
+  code: string
+  key: string
+  topic: string
+  me: string
 }
+
+/** What the pane draws of a saved chat: nothing secret, since state is readable. */
+export type ChatSummary = {
+  id: string
+  label: string
+  mask: string
+  me: string
+  preview: string
+  time: number
+  unread: number
+  seen: string
+}
+
+export type Profile = { name: string; isMuted: boolean }
+
+/** The newest unseen message, for the row above the prompt. */
+export type Alert = { chat: string; from: string; text: string; count: number }
 
 declare module 'claude-code' {
   interface PluginState {
     'side-chat': {
-      setup: Shaped<ChatSetup>
+      profile: Shaped<Profile>
+      chats: Shaped<ChatSummary[]>
       messages: Shaped<ChatMessage[]>
-      isPrimed: boolean
+      open: string
       notice: string
       sent: number
-      unread: number
       isLeaving: boolean
       minute: number
+      alert: Alert | null
+      transport: string
     }
   }
 }
