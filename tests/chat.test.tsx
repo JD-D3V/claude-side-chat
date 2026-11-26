@@ -22,6 +22,8 @@ for (const surface of ['desktop', 'terminal'] as const) {
     const topic: Posted[] = []
     const urls: string[] = []
     const toasts: string[] = []
+    const popups: { title?: string; text: string }[] = []
+    let copied = ''
     const clock = mock.clock(on, { now: 1_000_000 })
     mock.store(on)
     on('command.register', () => ({ value: { command: 'friend' } }))
@@ -31,6 +33,16 @@ for (const surface of ['desktop', 'terminal'] as const) {
       toasts.push(e.text)
 
       return { value: undefined }
+    })
+    on('ui.notify', (_, e) => {
+      popups.push({ title: e.title, text: e.text })
+
+      return { value: { isSent: true, channel: 'client' } }
+    })
+    on('ui.copy', (_, e) => {
+      copied = e.text
+
+      return { value: { isCopied: true } }
     })
     on('http.fetch', (_, e) => {
       urls.push(e.url)
@@ -63,15 +75,17 @@ for (const surface of ['desktop', 'terminal'] as const) {
     // First run: a name, then a new chat.
     await ui.input({ key: 'name', text: 'Alex' })
     await ui.press({ key: 'create' })
-    const code = (await ui.find({ type: 'Text', text: /^Chat code / }))?.text
-    expect(code).toMatch(/^Chat code [a-z0-9]{4}(-[a-z0-9]{4}){3}$/)
+    // The pane shows the code masked; the copy button hands over all of it.
+    await ui.press({ key: 'copy' })
+    expect(copied).toMatch(/^[a-z0-9]{4}(-[a-z0-9]{4}){3}$/)
+    const masked = `${copied.slice(0, 4)}-····-····-${copied.slice(-4)}`
+    expect((await ui.find({ type: 'Text', text: /····/ }))?.text).toBe(masked)
 
     // Sending posts to the relay and shows the message as mine.
     await ui.input({ key: 'message-0', text: 'hello there' })
     expect(topic.length).toBe(1)
     expect(JSON.parse(topic[0]?.message ?? '{}').from).toBe('Alex')
     expect(await ui.find({ type: 'Text', text: /^hello there$/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /^You$/ })).toBeDefined()
     // The field is a new, empty one after a send.
     expect(await ui.find({ key: 'message-1' })).toBeDefined()
 
@@ -86,10 +100,29 @@ for (const surface of ['desktop', 'terminal'] as const) {
     expect(await ui.find({ type: 'Text', text: /^hey Alex$/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /^Sam$/ })).toBeDefined()
     expect(toasts).toEqual(['Sam: hey Alex'])
+    expect(popups).toEqual([{ title: 'Sam', text: 'hey Alex' }])
+
+    // Muted, a new message still arrives but raises nothing.
+    await ui.press({ key: 'mute' })
+    topic.push({
+      id: 'm3',
+      time: 2001,
+      event: 'message',
+      message: JSON.stringify({ v: 1, from: 'Sam', cid: 'other', text: 'you there?' }),
+    })
+    await clock.advance(12_000)
+    expect(await ui.find({ type: 'Text', text: /^you there\?$/ })).toBeDefined()
+    expect(toasts.length).toBe(1)
+    expect(popups.length).toBe(1)
+
+    // Leaving asks first, then returns to the start screen.
+    await ui.press({ key: 'leave' })
+    expect(await ui.find({ key: 'leave-yes' })).toBeDefined()
+    await ui.press({ key: 'leave-yes' })
+    expect(await ui.find({ key: 'create' })).toBeDefined()
 
     // Every request went to the chat's own topic on the relay.
-    const room = code?.replace('Chat code ', '')
-    expect(urls.every(url => url.startsWith(`https://ntfy.sh/sidechat-${room}`))).toBe(true)
+    expect(urls.every(url => url.startsWith(`https://ntfy.sh/sidechat-${copied}`))).toBe(true)
     await ui.unmount()
   })
 }

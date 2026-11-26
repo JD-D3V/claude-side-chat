@@ -25,7 +25,10 @@ plugin.
 The "Friend chat" pane opens by itself in a new session; `/friend` opens it
 again if you close it. Type your name, then either press "Start a new chat"
 and send the code to your friend, or paste the code your friend sent you into
-"Friend's code". The code is saved, so you enter it once.
+"Or join with a code". The code is saved, so you enter it once.
+
+When your friend writes, you get a popup in Claude and a system notification.
+"Mute" in the pane turns both off; "Copy invite code" copies your code again.
 
 ## Good to know
 

@@ -6,7 +6,12 @@ export type ChatMessage = {
   text: string
 }
 
-export type ChatSetup = { name: string; room: string; clientId: string }
+export type ChatSetup = {
+  name: string
+  room: string
+  clientId: string
+  isMuted: boolean
+}
 
 declare module 'claude-code' {
   interface PluginState {
@@ -16,6 +21,9 @@ declare module 'claude-code' {
       isPrimed: boolean
       notice: string
       sent: number
+      unread: number
+      isLeaving: boolean
+      minute: number
     }
   }
 }
