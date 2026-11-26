@@ -33,7 +33,18 @@ test('with a live stream a message arrives at once, with every popup', async ($,
     contacts: [{ id: 'c1', label: 'New chat', code: 'aaaabbbbccccdddd', ...keys, me: 'me' }],
   })
   on('command.register', () => ({ value: { command: 'friend' } }))
-  on('ui.open', () => ({ value: { isPlaced: true } }))
+  const opened: string[] = []
+  const closed: string[] = []
+  on('ui.open', (_, e) => {
+    opened.push(`${e.id}:${String((e as { placement?: string }).placement ?? '')}`)
+
+    return { value: { isPlaced: true } }
+  })
+  on('ui.close', (_, e) => {
+    closed.push(e.id)
+
+    return { value: undefined }
+  })
   on('session.start', (_, e) => ({ cwd: e.cwd }))
   on('ui.toast', () => ({ value: undefined }))
   on('ui.notify', (_, e) => {
@@ -96,6 +107,9 @@ test('with a live stream a message arrives at once, with every popup', async ($,
   const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
   await pass(4_000)
 
+  // Already set up: the mod does not open the pane by itself.
+  expect(opened).toEqual([])
+
   // One curl, on the chat's topic, and the pane says the chat is live.
   expect(spawned.length).toBe(1)
   expect(spawned[0]?.[0]).toBe('curl')
@@ -117,6 +131,10 @@ test('with a live stream a message arrives at once, with every popup', async ($,
   expect(guard).toBeGreaterThan(0)
   expect(ran[0]?.slice(guard + 1)).toEqual(['-e hello', 'Sam'])
   expect(notified).toEqual([])
+
+  // The pane has a close control of its own.
+  await ui.press({ key: 'close' })
+  expect(closed).toEqual(['side-chat'])
 
   // In Claude: a row above the prompt, which Dismiss takes away.
   const band = await $.ui.mount({

@@ -847,7 +847,7 @@ export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     await $.command.register({
       name: 'friend',
-      description: 'Open the chat pane to message your friends',
+      description: 'Open the chat pane to message your friends (/friend close closes it)',
     })
     await migrate($)
     const startedAt = Math.floor((await $.clock.now()) / 60000)
@@ -864,11 +864,15 @@ export const register: Register = on => {
     }
 
     await sync($)
-    void $.ui.open(
-      contacts.length === 0
-        ? { id: PANE, title: TITLE }
-        : { id: PANE, title: TITLE, placement: 'widget' },
-    )
+
+    // The pane opens by itself only for the first-run setup. After that it is
+    // the person's to open (`/friend`, or "Open" on the row above the prompt)
+    // and to close: a pane this mod reopened or pinned small could not be
+    // closed for good.
+    if (asText(await $.store.get('name')) === '') {
+      void $.ui.open({ id: PANE, title: TITLE, closeOnEscape: true })
+    }
+
     $.clock.every(TICK_MS, () => {
       void tick($)
     })
@@ -876,8 +880,14 @@ export const register: Register = on => {
     return next(e)
   })
 
-  on('command.run', { command: 'friend' }, async $ => {
-    await $.ui.open({ id: PANE, title: TITLE, focus: true })
+  on('command.run', { command: 'friend' }, async ($, e) => {
+    if (e.args.trim().toLowerCase() === 'close') {
+      await $.ui.close({ id: PANE })
+
+      return { text: 'Friend chat closed.' }
+    }
+
+    await $.ui.open({ id: PANE, title: TITLE, focus: true, closeOnEscape: true })
     const openId = await read($, open)
     if (openId !== '') await clearUnread($, openId)
     void tick($, true)
@@ -905,7 +915,7 @@ export const register: Register = on => {
           key="alert-open"
           label="Open"
           onPress={async () => {
-            await $.ui.open({ id: PANE, title: TITLE, focus: true })
+            await $.ui.open({ id: PANE, title: TITLE, focus: true, closeOnEscape: true })
             if (held.chat !== '') await showChat($, held.chat)
             await clearAlert($)
           }}
@@ -958,6 +968,16 @@ export const register: Register = on => {
       )
     }
 
+    // The mod's own way out, which does not depend on the surface's mark.
+    const closer = (
+      <Button
+        key="close"
+        plain
+        role="dismiss"
+        label="Close"
+        onPress={() => $.ui.close({ id: PANE })}
+      />
+    )
     const isProblem = note.startsWith(PROBLEM)
     const status =
       note === '' ? null : (
@@ -987,9 +1007,12 @@ export const register: Register = on => {
             onSubmit={value => saveName($, value)}
           />
           {status}
-          <Text dimColor size="caption">
-            End-to-end encrypted. Claude can't see your chats.
-          </Text>
+          <Box justifyContent="space-between" gap={1}>
+            <Text dimColor size="caption">
+              End-to-end encrypted. Claude can't see your chats.
+            </Text>
+            {closer}
+          </Box>
         </Box>
       )
     }
@@ -1045,6 +1068,7 @@ export const register: Register = on => {
               onPress={() => setMuted($, !who.isMuted)}
             />
             <Button key="test" plain label="Test popups" onPress={() => testPopups($)} />
+            {closer}
           </Box>
           {status}
           <Text dimColor size="caption">
@@ -1145,6 +1169,7 @@ export const register: Register = on => {
                   label="Remove"
                   onPress={() => update($, isLeaving, () => true)}
                 />
+                {closer}
               </Box>
             )}
           </Box>

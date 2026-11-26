@@ -22,8 +22,8 @@ plugin.
 
 ## Use
 
-The "Friend chat" pane opens by itself in a new session; `/friend` opens it
-again if you close it. Type your name, then either press "Start a new chat"
+The "Friend chat" pane opens by itself the first time; after that `/friend` opens it
+(and `/friend close` or its Close button closes it). Type your name, then either press "Start a new chat"
 and send its invite code to your friend, or paste a code a friend sent you
 into "Or join with a code".
 
