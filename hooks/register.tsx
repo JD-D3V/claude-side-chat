@@ -986,15 +986,10 @@ export const register: Register = on => {
       )
     }
 
-    // The mod's own way out, which does not depend on the surface's mark.
+    // The mod's own way out, which does not depend on the surface's mark. It
+    // is drawn first on every screen, where a narrow pane cannot cut it off.
     const closer = (
-      <Button
-        key="close"
-        plain
-        role="dismiss"
-        label="Close"
-        onPress={() => $.ui.close({ id: PANE })}
-      />
+      <Button key="close" plain label="✕ Close" onPress={() => $.ui.close({ id: PANE })} />
     )
     const isProblem = note.startsWith(PROBLEM)
     const status =
@@ -1025,11 +1020,11 @@ export const register: Register = on => {
             onSubmit={value => saveName($, value)}
           />
           {status}
-          <Box justifyContent="space-between" gap={1}>
+          <Box gap={1} flexWrap="wrap" alignItems="center">
+            {closer}
             <Text dimColor size="caption">
               End-to-end encrypted. Claude can't see your chats.
             </Text>
-            {closer}
           </Box>
         </Box>
       )
@@ -1086,7 +1081,8 @@ export const register: Register = on => {
             submitLabel="Join"
             onSubmit={value => addChat($, value)}
           />
-          <Box gap={1}>
+          <Box gap={1} flexWrap="wrap">
+            {closer}
             <Button
               key="mute"
               plain
@@ -1094,7 +1090,6 @@ export const register: Register = on => {
               onPress={() => setMuted($, !who.isMuted)}
             />
             <Button key="test" plain label="Test popups" onPress={() => testPopups($)} />
-            {closer}
           </Box>
           {status}
           <Text dimColor size="caption">
@@ -1156,8 +1151,9 @@ export const register: Register = on => {
     return (
       <Box flexDirection="column" gap={1}>
         <Box flexDirection="column">
-          <Box justifyContent="space-between" alignItems="center" gap={1}>
+          <Box justifyContent="space-between" alignItems="center" gap={1} flexWrap="wrap">
             <Box gap={1} alignItems="center">
+              {closer}
               <Button key="back" plain label="‹ Contacts" onPress={() => showChat($, '')} />
               <Text weight="semibold">
                 {hasFriend || chat.label !== 'New chat' ? chat.label : 'Waiting for your friend'}
@@ -1195,7 +1191,6 @@ export const register: Register = on => {
                   label="Remove"
                   onPress={() => update($, isLeaving, () => true)}
                 />
-                {closer}
               </Box>
             )}
           </Box>
@@ -1210,7 +1205,7 @@ export const register: Register = on => {
               onSubmit={value => renameChat($, chat.id, value)}
             />
           )}
-          <Box gap={1} alignItems="center">
+          <Box gap={1} alignItems="center" flexWrap="wrap">
             <Text dimColor size="caption" mono>
               {chat.mask}
             </Text>
