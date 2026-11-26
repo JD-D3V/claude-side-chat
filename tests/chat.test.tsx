@@ -137,9 +137,16 @@ for (const surface of ['desktop', 'terminal'] as const) {
     await ui.press({ key: 'back' })
     expect(await ui.find({ key: 'create' })).toBeDefined()
     const row = await ui.find({ type: 'Button', text: /Sam/ })
-    expect(row?.text).toMatch(/Sam: you there\?/)
+    expect(await ui.find({ type: 'Text', text: /^Sam: you there\?$/ })).toBeDefined()
     await ui.press({ key: row?.key ?? '' })
     expect(await ui.find({ type: 'Text', text: /^hey Alex$/ })).toBeDefined()
+
+    // A name of your own for the contact wins over the one they write under.
+    await ui.press({ key: 'rename-open' })
+    await ui.input({ key: 'rename', text: 'Sammy from school' })
+    await ui.press({ key: 'back' })
+    expect(await ui.find({ type: 'Button', text: /Sammy from school/ })).toBeDefined()
+    await ui.press({ key: row?.key ?? '' })
 
     // Removing asks first, then the chat is gone from the list.
     await ui.press({ key: 'leave' })

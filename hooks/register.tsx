@@ -66,6 +66,7 @@ const open = atom({ plugin: 'side-chat', key: 'open' } as const, '')
 const notice = atom({ plugin: 'side-chat', key: 'notice' } as const, '')
 const sent = atom({ plugin: 'side-chat', key: 'sent' } as const, 0)
 const isLeaving = atom({ plugin: 'side-chat', key: 'isLeaving' } as const, false)
+const isRenaming = atom({ plugin: 'side-chat', key: 'isRenaming' } as const, false)
 // The clock, to the minute: writing it redraws the ages beside the messages.
 const minute = atom({ plugin: 'side-chat', key: 'minute' } as const, 0)
 // The newest unseen message, drawn in the row above the prompt.
@@ -314,7 +315,7 @@ async function migrate($: Engine): Promise<void> {
     if (!contacts.some(one => one.code === legacy)) {
       contacts.push({
         id: crypto.randomUUID().slice(0, 8),
-        label: 'New chat',
+        label: '',
         code: legacy,
         ...deriveKeys(legacy),
         me: crypto.randomUUID(),
@@ -373,7 +374,10 @@ async function syncNow($: Engine): Promise<void> {
         ? []
         : log.slice(seenAt + 1).filter(one => one.cid !== contact.me)
     const friend = log.findLast(one => one.cid !== contact.me)?.from
-    const label = friend ?? contact.label
+    // The name the person gave the contact; until then, the name the friend
+    // writes under.
+    const named = contact.label === 'New chat' ? '' : contact.label
+    const label = named !== '' ? named : (friend ?? 'New chat')
     if (fresh.length > 0) news.push({ id: contact.id, label, fresh })
     after.push({
       id: contact.id,
@@ -692,6 +696,7 @@ async function clearUnread($: Engine, id: string): Promise<void> {
 async function showChat($: Engine, id: string): Promise<void> {
   await update($, open, () => id)
   await update($, isLeaving, () => false)
+  await update($, isRenaming, () => false)
   await say($, '')
   if (id !== '') await $.store.set('lastOpen', id)
   await sync($)
@@ -725,7 +730,7 @@ async function addChat($: Engine, value: string): Promise<void> {
 
   const contact: Contact = {
     id: crypto.randomUUID().slice(0, 8),
-    label: 'New chat',
+    label: '',
     code,
     // The slow step: done once here, and the key is kept with the chat.
     ...deriveKeys(code),
@@ -735,6 +740,18 @@ async function addChat($: Engine, value: string): Promise<void> {
   await showChat($, contact.id)
   // What the other person sent before this machine joined, if still kept.
   await poll($, [contact], '12h')
+  await sync($)
+}
+
+/** Saves the person's own name for a contact; empty goes back to the friend's. */
+async function renameChat($: Engine, id: string, value: string): Promise<void> {
+  const label = clean(value, 40)
+  const contacts = await loadContacts($)
+  await $.store.set(
+    'contacts',
+    contacts.map(one => (one.id === id ? { ...one, label } : one)),
+  )
+  await update($, isRenaming, () => false)
   await sync($)
 }
 
@@ -934,6 +951,7 @@ export const register: Register = on => {
     const note = await read($, notice)
     const count = await read($, sent)
     const leaving = await read($, isLeaving)
+    const renaming = await read($, isRenaming)
     const mode = await read($, transport)
     const nowMs = (await read($, minute)) * 60000
     const chat = list.find(one => one.id === openId)
@@ -1023,7 +1041,7 @@ export const register: Register = on => {
         <Box flexDirection="column" gap={1} paddingY={1}>
           <Box flexDirection="column">
             <Text size="heading" weight="semibold">
-              {list.length === 0 ? `Hi ${who.name}` : 'Chats'}
+              {list.length === 0 ? `Hi ${who.name}` : 'Contacts'}
             </Text>
             {list.length === 0 && (
               <Text dimColor>
@@ -1033,15 +1051,23 @@ export const register: Register = on => {
             )}
           </Box>
           {list.length > 0 && (
-            <Box flexDirection="column">
+            <Box flexDirection="column" gap={1}>
               {list.map(one => (
-                <Button key={`chat-${one.id}`} plain onPress={() => showChat($, one.id)}>
-                  {one.label}
-                  {one.unread > 0 ? ` (${one.unread} new)` : ''}{' '}
-                  <Text dimColor>
+                <Box flexDirection="column">
+                  <Box justifyContent="space-between" alignItems="center" gap={1}>
+                    <Button key={`chat-${one.id}`} plain onPress={() => showChat($, one.id)}>
+                      {one.unread > 0 && <Text color="claude">● </Text>}
+                      <Text weight="semibold">{one.label}</Text>
+                      {one.unread > 0 && <Text color="claude"> {one.unread} new</Text>}
+                    </Button>
+                    <Text dimColor size="caption">
+                      {one.time === 0 || nowMs === 0 ? '' : ago(nowMs, one.time)}
+                    </Text>
+                  </Box>
+                  <Text dimColor wrap="truncate-end">
                     {one.preview === '' ? `No messages yet · ${one.mask}` : one.preview}
                   </Text>
-                </Button>
+                </Box>
               ))}
             </Box>
           )}
@@ -1132,9 +1158,9 @@ export const register: Register = on => {
         <Box flexDirection="column">
           <Box justifyContent="space-between" alignItems="center" gap={1}>
             <Box gap={1} alignItems="center">
-              <Button key="back" plain label="‹ Chats" onPress={() => showChat($, '')} />
+              <Button key="back" plain label="‹ Contacts" onPress={() => showChat($, '')} />
               <Text weight="semibold">
-                {hasFriend ? chat.label : 'Waiting for your friend'}
+                {hasFriend || chat.label !== 'New chat' ? chat.label : 'Waiting for your friend'}
               </Text>
             </Box>
             {leaving ? (
@@ -1173,10 +1199,27 @@ export const register: Register = on => {
               </Box>
             )}
           </Box>
+          {renaming && (
+            <Input
+              key="rename"
+              label="Contact name"
+              value={chat.label === 'New chat' ? '' : chat.label}
+              placeholder="A name for this contact"
+              submitLabel="Save"
+              autoFocus
+              onSubmit={value => renameChat($, chat.id, value)}
+            />
+          )}
           <Box gap={1} alignItems="center">
             <Text dimColor size="caption" mono>
               {chat.mask}
             </Text>
+            <Button
+              key="rename-open"
+              plain
+              label={renaming ? 'Cancel' : 'Rename'}
+              onPress={() => update($, isRenaming, held => !held)}
+            />
             <Button
               key="copy"
               plain
@@ -1236,7 +1279,7 @@ export const register: Register = on => {
         <Box flexDirection="column">
           <Input
             key={`message-${count}`}
-            placeholder={hasFriend ? `Message ${chat.label}` : 'Write a message'}
+            placeholder={chat.label !== 'New chat' ? `Message ${chat.label}` : 'Write a message'}
             submitLabel="Send"
             autoFocus
             onInput={() => typing($, chat.id)}

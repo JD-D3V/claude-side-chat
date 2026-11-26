@@ -27,9 +27,11 @@ The "Friend chat" pane opens by itself the first time; after that `/friend` open
 and send its invite code to your friend, or paste a code a friend sent you
 into "Or join with a code".
 
-Each chat is saved, with its key, on your computer. You enter a code once;
-after that the chat is in your list under your friend's name, and you can keep
-up to 20 of them. "‹ Chats" goes back to the list, "Remove" forgets a chat.
+Each chat is saved as a contact, with its key, on your computer. You enter a
+code once; after that the contact is in your list with its last message, how
+long ago it came, and a mark when something is unread. A contact shows under
+your friend's name until you give it one of your own with "Rename". You can
+keep up to 20. "‹ Contacts" goes back to the list, "Remove" forgets a contact.
 
 When a friend writes, a row appears above the prompt in Claude ("Open" /
 "Dismiss"), and your computer shows a system notification, so you see it with
