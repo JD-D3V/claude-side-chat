@@ -103,6 +103,15 @@ for (const surface of ['desktop', 'terminal'] as const) {
     // The field is a new, empty one after a send.
     expect(await ui.find({ key: 'message-1' })).toBeDefined()
 
+    // The Send button sends what is in the box, the same as Enter.
+    await ui.input({ key: 'message-1', text: 'and a second line', kind: 'change' })
+    await ui.press({ key: 'send' })
+    expect(relay.length).toBe(2)
+    expect(open(keys, relay[1]?.message ?? '')?.payload.text).toBe('and a second line')
+    expect(await ui.find({ key: 'message-2' })).toBeDefined()
+    await ui.press({ key: 'send' })
+    expect(relay.length).toBe(2)
+
     // The friend answers from their own machine; the next poll brings it in.
     const reply = seal(keys, { from: 'Sam', cid: 'other', ts: clock.now(), text: 'hey Alex' }) ?? ''
     post(keys.topic, reply)

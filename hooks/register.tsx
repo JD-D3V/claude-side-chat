@@ -811,8 +811,13 @@ async function setMuted($: Engine, isMuted: boolean): Promise<void> {
   )
 }
 
+// What is in each chat's message box right now, for the Send button: the box
+// reports every change, and a press sends what it last said.
+const drafts = new Map<string, string>()
+
 /** The person is writing: clear what they have now seen, and expect a reply. */
-async function typing($: Engine, id: string): Promise<void> {
+async function typing($: Engine, id: string, value: string): Promise<void> {
+  drafts.set(id, value)
   await clearUnread($, id)
   const now = await $.clock.now()
   const activeAt = Number(await $.store.get('activeAt')) || 0
@@ -853,6 +858,7 @@ async function copyCode($: Engine, id: string, surface: 'terminal' | 'desktop' |
 async function send($: Engine, id: string, value: string): Promise<void> {
   const text = clean(value, 4000)
   if (text === '') return
+  drafts.delete(id)
   const contact = (await loadContacts($)).find(one => one.id === id)
   if (contact === undefined) return
   const name = asText(await $.store.get('name')) || 'Friend'
@@ -1028,7 +1034,8 @@ export const register: Register = on => {
     // ---- Pieces every page is built from.
 
     const face = (name: string) =>
-      Svg === null ? null : <Svg source={avatar(name)} alt="" width={28} height={28} />
+      // A picture with no description is not drawn.
+      Svg === null ? null : <Svg source={avatar(name)} alt={name} width={28} height={28} />
 
     /** The top of a page: where you came from, where you are, the way out. */
     const bar = (title: string, back: (() => Promise<unknown>) | null, extra: RenderChildren = null) => (
@@ -1429,16 +1436,33 @@ export const register: Register = on => {
           ),
         )}
 
+        {/* The message box. A two-line field is the one a desktop stretches
+            across the pane; with no button of its own, Enter sends from it and
+            Shift+Enter starts a new line. Send is a button beside it. */}
         <Box flexDirection="column">
-          <Input
-            key={`message-${count}`}
-            placeholder={hasFriend || isNamed ? `Message ${chat.label}` : 'Write a message'}
-            submitLabel="Send"
-            autoFocus
-            onInput={() => typing($, chat.id)}
-            onSubmit={value => send($, chat.id, value)}
-          />
-          {status}
+          <Box gap={1} alignItems="flex-end">
+            <Box flexDirection="column" flexGrow={1} flexShrink={1}>
+              <Input
+                key={`message-${count}`}
+                rows={2}
+                placeholder={hasFriend || isNamed ? `Message ${chat.label}` : 'Write a message'}
+                autoFocus
+                onInput={value => typing($, chat.id, value)}
+                onSubmit={value => send($, chat.id, value)}
+              />
+            </Box>
+            <Button
+              key="send"
+              variant="primary"
+              label="Send"
+              onPress={() => send($, chat.id, drafts.get(chat.id) ?? '')}
+            />
+          </Box>
+          {status ?? (
+            <Text dimColor size="caption">
+              Enter to send · Shift+Enter for a new line
+            </Text>
+          )}
         </Box>
       </Box>
     )
