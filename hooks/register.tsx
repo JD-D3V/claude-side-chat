@@ -1,5 +1,5 @@
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, Register } from 'claude-code'
+import type { EngineInterface, Register, RenderChildren } from 'claude-code'
 
 import type { Alert, ChatMessage, ChatSummary, Contact, Profile } from '../types'
 import { deriveKeys, normalizeCode, open as openFrame, seal } from './crypto'
@@ -66,7 +66,9 @@ const open = atom({ plugin: 'side-chat', key: 'open' } as const, '')
 const notice = atom({ plugin: 'side-chat', key: 'notice' } as const, '')
 const sent = atom({ plugin: 'side-chat', key: 'sent' } as const, 0)
 const isLeaving = atom({ plugin: 'side-chat', key: 'isLeaving' } as const, false)
-const isRenaming = atom({ plugin: 'side-chat', key: 'isRenaming' } as const, false)
+// Which page the pane shows beside the list and a chat: '' for those two,
+// or 'details', 'add', 'settings'.
+const page = atom({ plugin: 'side-chat', key: 'page' } as const, '')
 // The clock, to the minute: writing it redraws the ages beside the messages.
 const minute = atom({ plugin: 'side-chat', key: 'minute' } as const, 0)
 // The newest unseen message, drawn in the row above the prompt.
@@ -677,9 +679,32 @@ async function saveName($: Engine, value: string): Promise<void> {
     return
   }
 
+  const isFirst = asText(await $.store.get('name')) === ''
   await $.store.set('name', name)
-  await say($, '')
   await sync($)
+  await say($, isFirst ? '' : 'Saved.')
+}
+
+/** Moves the pane to one of its pages, with a clean slate. */
+async function goTo($: Engine, where: string): Promise<void> {
+  await update($, isLeaving, () => false)
+  await say($, '')
+  await update($, page, () => where)
+}
+
+/** A round badge with the contact's initial, for surfaces that draw pictures. */
+function avatar(name: string): string {
+  const first = name.trim()[0] ?? ''
+  const letter = /[a-z0-9]/i.test(first) ? first.toUpperCase() : '•'
+  let hue = 0
+  for (const one of name) hue = (hue * 31 + (one.codePointAt(0) ?? 0)) % 360
+
+  return (
+    '<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 28 28">' +
+    `<circle cx="14" cy="14" r="14" fill="hsl(${hue} 32% 52%)"/>` +
+    '<text x="14" y="19" text-anchor="middle" font-family="system-ui,-apple-system,sans-serif" ' +
+    `font-size="14" font-weight="600" fill="#fff">${letter}</text></svg>`
+  )
 }
 
 async function clearUnread($: Engine, id: string): Promise<void> {
@@ -694,9 +719,12 @@ async function clearUnread($: Engine, id: string): Promise<void> {
 }
 
 async function showChat($: Engine, id: string): Promise<void> {
+  // What was on screen in the chat being left has been seen.
+  const leaving = await read($, open)
+  if (leaving !== '' && leaving !== id) await clearUnread($, leaving)
   await update($, open, () => id)
   await update($, isLeaving, () => false)
-  await update($, isRenaming, () => false)
+  await update($, page, () => '')
   await say($, '')
   if (id !== '') await $.store.set('lastOpen', id)
   await sync($)
@@ -751,8 +779,8 @@ async function renameChat($: Engine, id: string, value: string): Promise<void> {
     'contacts',
     contacts.map(one => (one.id === id ? { ...one, label } : one)),
   )
-  await update($, isRenaming, () => false)
   await sync($)
+  await say($, 'Saved.')
 }
 
 async function removeChat($: Engine, id: string): Promise<void> {
@@ -943,7 +971,9 @@ export const register: Register = on => {
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
-    const { Box, Button, Input, Text } = $.ui.resolve(e)
+    const table = $.ui.resolve(e)
+    const { Box, Button, Input, Text } = table
+    const Svg = 'Svg' in table ? table.Svg : null
     const who = await read($, profile)
     const list = await read($, chats)
     const openId = await read($, open)
@@ -951,7 +981,7 @@ export const register: Register = on => {
     const note = await read($, notice)
     const count = await read($, sent)
     const leaving = await read($, isLeaving)
-    const renaming = await read($, isRenaming)
+    const where = await read($, page)
     const mode = await read($, transport)
     const nowMs = (await read($, minute)) * 60000
     const chat = list.find(one => one.id === openId)
@@ -975,7 +1005,7 @@ export const register: Register = on => {
             </Text>
             {unread > 0 && (
               <Text color="claude" size="caption">
-                {unread} new
+                {`${unread} new`}
               </Text>
             )}
           </Box>
@@ -986,111 +1016,151 @@ export const register: Register = on => {
       )
     }
 
-    // The mod's own way out, which does not depend on the surface's mark. It
-    // is drawn first on every screen, where a narrow pane cannot cut it off.
-    const closer = (
-      <Button key="close" plain label="✕ Close" onPress={() => $.ui.close({ id: PANE })} />
+    // ---- Pieces every page is built from.
+
+    const face = (name: string) =>
+      Svg === null ? null : <Svg source={avatar(name)} alt="" width={28} height={28} />
+
+    /** The top of a page: where you came from, where you are, the way out. */
+    const bar = (title: string, back: (() => Promise<unknown>) | null, extra: RenderChildren = null) => (
+      <Box justifyContent="space-between" alignItems="center" gap={1} flexWrap="wrap">
+        <Box gap={1} alignItems="center">
+          {back !== null && <Button key="back" label="‹ Back" onPress={back} />}
+          <Text size="heading" weight="semibold">
+            {title}
+          </Text>
+        </Box>
+        <Box gap={1} alignItems="center">
+          {extra}
+          <Button key="close" label="Close" onPress={() => $.ui.close({ id: PANE })} />
+        </Box>
+      </Box>
     )
+
+    /** A titled group of controls. */
+    const section = (title: string, hint: string, body: RenderChildren) => (
+      <Box
+        flexDirection="column"
+        gap={1}
+        borderStyle="round"
+        borderColor="promptBorder"
+        paddingX={1}
+      >
+        <Box flexDirection="column">
+          <Text weight="semibold">{title}</Text>
+          {hint !== '' && (
+            <Text dimColor size="footnote">
+              {hint}
+            </Text>
+          )}
+        </Box>
+        {body}
+      </Box>
+    )
+
     const isProblem = note.startsWith(PROBLEM)
     const status =
       note === '' ? null : (
-        <Text size="caption" dimColor={!isProblem} color={isProblem ? 'warning' : undefined}>
+        <Text size="footnote" dimColor={!isProblem} color={isProblem ? 'warning' : undefined}>
           {isProblem ? note.slice(PROBLEM.length) : note}
         </Text>
       )
+    const privacy = (
+      <Text dimColor size="caption">
+        End-to-end encrypted. Claude can't see your chats.
+      </Text>
+    )
 
+    const starting = section(
+      'Start a new chat',
+      'Makes an invite code to send to your friend.',
+      <Box>
+        <Button
+          key="create"
+          variant="primary"
+          label="Create invite code"
+          onPress={() => addChat($, newCode())}
+        />
+      </Box>,
+    )
+    const joining = section(
+      'Join a friend',
+      'Paste the invite code they sent you.',
+      <Input
+        key="join"
+        placeholder="xxxx-xxxx-xxxx-xxxx"
+        submitLabel="Join"
+        onSubmit={value => addChat($, value)}
+      />,
+    )
+
+    // ---- Welcome: the first run.
     if (who.name === '') {
       return (
-        <Box flexDirection="column" gap={1} paddingY={1}>
-          <Box flexDirection="column">
-            <Text size="heading" weight="semibold">
-              Chat with a friend
-            </Text>
-            <Text dimColor>
-              Message a friend from here while you work. They need this mod
-              too.
-            </Text>
-          </Box>
-          <Input
-            key="name"
-            label="Your name"
-            placeholder="How your friends will see you"
-            submitLabel="Continue"
-            autoFocus
-            onSubmit={value => saveName($, value)}
-          />
+        <Box flexDirection="column" gap={1}>
+          {bar(TITLE, null)}
+          <Text dimColor>
+            Message your friends from here while you work. They need this mod
+            too.
+          </Text>
+          {section(
+            'What should friends call you?',
+            'Shown beside your messages. You can change it later.',
+            <Input
+              key="name"
+              placeholder="Your name"
+              submitLabel="Continue"
+              autoFocus
+              onSubmit={value => saveName($, value)}
+            />,
+          )}
           {status}
-          <Box gap={1} flexWrap="wrap" alignItems="center">
-            {closer}
-            <Text dimColor size="caption">
-              End-to-end encrypted. Claude can't see your chats.
-            </Text>
-          </Box>
+          {privacy}
         </Box>
       )
     }
 
-    // The list of saved chats, and the two ways to add one.
-    if (chat === undefined) {
+    // ---- Settings.
+    if (where === 'settings') {
       return (
-        <Box flexDirection="column" gap={1} paddingY={1}>
-          <Box flexDirection="column">
-            <Text size="heading" weight="semibold">
-              {list.length === 0 ? `Hi ${who.name}` : 'Contacts'}
-            </Text>
-            {list.length === 0 && (
-              <Text dimColor>
-                Start a chat and send its invite code to your friend, or join
-                with a code they sent you. Either way it is saved here.
-              </Text>
-            )}
-          </Box>
-          {list.length > 0 && (
-            <Box flexDirection="column" gap={1}>
-              {list.map(one => (
-                <Box flexDirection="column">
-                  <Box justifyContent="space-between" alignItems="center" gap={1}>
-                    <Button key={`chat-${one.id}`} plain onPress={() => showChat($, one.id)}>
-                      {one.unread > 0 && <Text color="claude">● </Text>}
-                      <Text weight="semibold">{one.label}</Text>
-                      {one.unread > 0 && <Text color="claude"> {one.unread} new</Text>}
-                    </Button>
-                    <Text dimColor size="caption">
-                      {one.time === 0 || nowMs === 0 ? '' : ago(nowMs, one.time)}
-                    </Text>
-                  </Box>
-                  <Text dimColor wrap="truncate-end">
-                    {one.preview === '' ? `No messages yet · ${one.mask}` : one.preview}
-                  </Text>
-                </Box>
-              ))}
-            </Box>
+        <Box flexDirection="column" gap={1}>
+          {bar('Settings', () => goTo($, ''))}
+          {section(
+            'Your name',
+            'Shown beside your messages.',
+            <Input
+              key="name"
+              value={who.name}
+              placeholder="Your name"
+              submitLabel="Save"
+              onSubmit={value => saveName($, value)}
+            />,
           )}
-          <Box>
-            <Button
-              key="create"
-              variant="primary"
-              label="Start a new chat"
-              onPress={() => addChat($, newCode())}
-            />
-          </Box>
-          <Input
-            key="join"
-            label="Or join with a code"
-            placeholder="xxxx-xxxx-xxxx-xxxx"
-            submitLabel="Join"
-            onSubmit={value => addChat($, value)}
-          />
-          <Box gap={1} flexWrap="wrap">
-            {closer}
-            <Button
-              key="mute"
-              plain
-              label={who.isMuted ? 'Unmute popups' : 'Mute popups'}
-              onPress={() => setMuted($, !who.isMuted)}
-            />
-            <Button key="test" plain label="Test popups" onPress={() => testPopups($)} />
-          </Box>
+          {section(
+            who.isMuted ? 'Popups are off' : 'Popups are on',
+            'A new message shows above the prompt and as a system notification.',
+            <Box gap={1} flexWrap="wrap">
+              <Button
+                key="mute"
+                label={who.isMuted ? 'Turn popups on' : 'Turn popups off'}
+                onPress={() => setMuted($, !who.isMuted)}
+              />
+              <Button key="test" label="Send a test popup" onPress={() => testPopups($)} />
+            </Box>,
+          )}
+          {status}
+          {privacy}
+        </Box>
+      )
+    }
+
+    // ---- Add a chat.
+    if (where === 'add' && chat === undefined) {
+      return (
+        <Box flexDirection="column" gap={1}>
+          {bar('New chat', () => goTo($, ''))}
+          {starting}
+          {joining}
           {status}
           <Text dimColor size="caption">
             Anyone with a chat's code can read it, so share codes privately.
@@ -1099,8 +1169,145 @@ export const register: Register = on => {
       )
     }
 
+    // ---- Contacts: the home page.
+    if (chat === undefined) {
+      return (
+        <Box flexDirection="column" gap={1}>
+          {bar(
+            list.length === 0 ? `Hi ${who.name}` : 'Messages',
+            null,
+            <Button key="settings" label="Settings" onPress={() => goTo($, 'settings')} />,
+          )}
+          {list.length === 0 && (
+            <Text dimColor>
+              No chats yet. Start one, or join a friend's. Either way it is
+              saved here as a contact.
+            </Text>
+          )}
+          {list.length === 0 && starting}
+          {list.length === 0 && joining}
+          {list.map(one => (
+            <Box
+              borderStyle="round"
+              borderColor="promptBorder"
+              paddingX={1}
+              justifyContent="space-between"
+              alignItems="center"
+              gap={1}
+            >
+              <Box gap={1} alignItems="center" flexGrow={1} flexShrink={1}>
+                {face(one.label)}
+                <Box flexDirection="column" flexGrow={1} flexShrink={1}>
+                  <Box gap={1} alignItems="center">
+                    <Text weight="semibold">{one.label}</Text>
+                    {one.unread > 0 && (
+                      <Text color="claude" size="caption">
+                        {`● ${one.unread} new`}
+                      </Text>
+                    )}
+                    <Text dimColor size="caption">
+                      {one.time === 0 || nowMs === 0 ? '' : ago(nowMs, one.time)}
+                    </Text>
+                  </Box>
+                  <Text dimColor maxLines={1}>
+                    {one.preview === '' ? 'No messages yet' : one.preview}
+                  </Text>
+                </Box>
+              </Box>
+              <Button
+                key={`chat-${one.id}`}
+                variant={one.unread > 0 ? 'primary' : 'secondary'}
+                label="Open"
+                onPress={() => showChat($, one.id)}
+              />
+            </Box>
+          ))}
+          {list.length > 0 && (
+            <Box>
+              <Button
+                key="new"
+                variant="primary"
+                label="New chat"
+                onPress={() => goTo($, 'add')}
+              />
+            </Box>
+          )}
+          {status}
+          {privacy}
+        </Box>
+      )
+    }
+
     const isMine = (one: ChatMessage): boolean => one.cid === chat.me
     const hasFriend = log.some(one => !isMine(one))
+    const isNamed = chat.label !== 'New chat'
+    const copy = (
+      <Button
+        key="copy"
+        variant={hasFriend ? 'secondary' : 'primary'}
+        label="Copy invite code"
+        onPress={() => copyCode($, chat.id, e.surface)}
+      />
+    )
+
+    // ---- Contact details.
+    if (where === 'details') {
+      return (
+        <Box flexDirection="column" gap={1}>
+          {bar('Contact', () => goTo($, ''))}
+          {section(
+            'Name',
+            'Only you see this. Leave it empty to use the name they write under.',
+            <Input
+              key="rename"
+              value={isNamed ? chat.label : ''}
+              placeholder="A name for this contact"
+              submitLabel="Save"
+              onSubmit={value => renameChat($, chat.id, value)}
+            />,
+          )}
+          {section(
+            'Invite code',
+            'Whoever has this code can join and read the chat.',
+            <Box gap={1} alignItems="center" flexWrap="wrap">
+              <Text mono>{chat.mask}</Text>
+              {copy}
+            </Box>,
+          )}
+          {section(
+            'Remove contact',
+            'Forgets the chat and its messages on this computer.',
+            leaving ? (
+              <Box gap={1} alignItems="center" flexWrap="wrap">
+                <Text>Remove {chat.label}?</Text>
+                <Button
+                  key="leave-yes"
+                  variant="primary"
+                  label="Yes, remove"
+                  onPress={() => removeChat($, chat.id)}
+                />
+                <Button
+                  key="leave-no"
+                  label="Keep"
+                  onPress={() => update($, isLeaving, () => false)}
+                />
+              </Box>
+            ) : (
+              <Box>
+                <Button
+                  key="leave"
+                  label="Remove contact"
+                  onPress={() => update($, isLeaving, () => true)}
+                />
+              </Box>
+            ),
+          )}
+          {status}
+        </Box>
+      )
+    }
+
+    // ---- A chat.
 
     // Newest messages that fit the pane, counted by the rows they wrap to.
     const columns = Math.max(16, e.props.bodyColumns - 6)
@@ -1151,91 +1358,30 @@ export const register: Register = on => {
     return (
       <Box flexDirection="column" gap={1}>
         <Box flexDirection="column">
-          <Box justifyContent="space-between" alignItems="center" gap={1} flexWrap="wrap">
-            <Box gap={1} alignItems="center">
-              {closer}
-              <Button key="back" plain label="‹ Contacts" onPress={() => showChat($, '')} />
-              <Text weight="semibold">
-                {hasFriend || chat.label !== 'New chat' ? chat.label : 'Waiting for your friend'}
-              </Text>
-            </Box>
-            {leaving ? (
-              <Box gap={1} alignItems="center">
-                <Text dimColor size="caption">
-                  Remove this chat?
-                </Text>
-                <Button
-                  key="leave-yes"
-                  plain
-                  label="Remove"
-                  onPress={() => removeChat($, chat.id)}
-                />
-                <Button
-                  key="leave-no"
-                  plain
-                  label="Keep"
-                  onPress={() => update($, isLeaving, () => false)}
-                />
-              </Box>
-            ) : (
-              <Box gap={1}>
-                <Button
-                  key="mute"
-                  plain
-                  label={who.isMuted ? 'Unmute' : 'Mute'}
-                  onPress={() => setMuted($, !who.isMuted)}
-                />
-                <Button
-                  key="leave"
-                  plain
-                  label="Remove"
-                  onPress={() => update($, isLeaving, () => true)}
-                />
-              </Box>
-            )}
-          </Box>
-          {renaming && (
-            <Input
-              key="rename"
-              label="Contact name"
-              value={chat.label === 'New chat' ? '' : chat.label}
-              placeholder="A name for this contact"
-              submitLabel="Save"
-              autoFocus
-              onSubmit={value => renameChat($, chat.id, value)}
-            />
+          {bar(
+            hasFriend || isNamed ? chat.label : 'New chat',
+            () => showChat($, ''),
+            <Button key="details" label="Details" onPress={() => goTo($, 'details')} />,
           )}
-          <Box gap={1} alignItems="center" flexWrap="wrap">
-            <Text dimColor size="caption" mono>
-              {chat.mask}
-            </Text>
-            <Button
-              key="rename-open"
-              plain
-              label={renaming ? 'Cancel' : 'Rename'}
-              onPress={() => update($, isRenaming, held => !held)}
-            />
-            <Button
-              key="copy"
-              plain
-              label="Copy invite code"
-              onPress={() => copyCode($, chat.id, e.surface)}
-            />
-          </Box>
+          <Text dimColor size="caption">
+            End-to-end encrypted{' · '}
+            {mode === 'live' ? 'Live' : 'Checking every few seconds'}
+          </Text>
         </Box>
 
+        {!hasFriend &&
+          section(
+            'Invite your friend',
+            'Send them this code privately. They join with it once, and the chat is saved for both of you.',
+            <Box gap={1} alignItems="center" flexWrap="wrap">
+              <Text mono>{chat.mask}</Text>
+              {copy}
+            </Box>,
+          )}
         {hidden > 0 && (
           <Text dimColor size="caption">
-            {hidden} earlier {hidden === 1 ? 'message' : 'messages'}
+            {`${hidden} earlier ${hidden === 1 ? 'message' : 'messages'}`}
           </Text>
-        )}
-        {log.length === 0 && (
-          <Box flexDirection="column" paddingY={1}>
-            <Text weight="semibold">No messages yet</Text>
-            <Text dimColor>
-              Send your invite code to a friend. Once they join, say hi.
-            </Text>
-          </Box>
         )}
         {groups.map(group =>
           group.isMine ? (
@@ -1255,18 +1401,21 @@ export const register: Register = on => {
               </Text>
             </Box>
           ) : (
-            <Box flexDirection="column" marginRight={4}>
-              <Box gap={1}>
-                <Text size="caption" weight="semibold">
-                  {group.from}
-                </Text>
-                <Text dimColor size="caption">
-                  {when(group)}
-                </Text>
+            <Box gap={1} marginRight={4}>
+              {face(chat.label)}
+              <Box flexDirection="column" flexShrink={1}>
+                <Box gap={1}>
+                  <Text size="caption" weight="semibold">
+                    {group.from}
+                  </Text>
+                  <Text dimColor size="caption">
+                    {when(group)}
+                  </Text>
+                </Box>
+                {group.items.map(one => (
+                  <Text>{one.text}</Text>
+                ))}
               </Box>
-              {group.items.map(one => (
-                <Text>{one.text}</Text>
-              ))}
             </Box>
           ),
         )}
@@ -1274,18 +1423,13 @@ export const register: Register = on => {
         <Box flexDirection="column">
           <Input
             key={`message-${count}`}
-            placeholder={chat.label !== 'New chat' ? `Message ${chat.label}` : 'Write a message'}
+            placeholder={hasFriend || isNamed ? `Message ${chat.label}` : 'Write a message'}
             submitLabel="Send"
             autoFocus
             onInput={() => typing($, chat.id)}
             onSubmit={value => send($, chat.id, value)}
           />
-          {status ?? (
-            <Text dimColor size="caption">
-              End-to-end encrypted{' · '}
-              {mode === 'live' ? 'Live' : 'Checking every few seconds'}
-            </Text>
-          )}
+          {status}
         </Box>
       </Box>
     )

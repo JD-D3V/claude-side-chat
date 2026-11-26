@@ -45,7 +45,7 @@ declare module 'claude-code' {
       notice: string
       sent: number
       isLeaving: boolean
-      isRenaming: boolean
+      page: string
       minute: number
       alert: Alert | null
       transport: string

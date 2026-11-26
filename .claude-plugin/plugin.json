@@ -1,6 +1,6 @@
 {
   "name": "side-chat",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "description": "A side pane for sending messages to a friend who has the same mod, paired by a shared chat code.",
   "types": "./types/index.d.ts"
 }

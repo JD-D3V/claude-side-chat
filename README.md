@@ -22,22 +22,27 @@ plugin.
 
 ## Use
 
-The "Friend chat" pane opens by itself the first time; after that `/friend` opens it
-(and `/friend close` or its Close button closes it). Type your name, then either press "Start a new chat"
-and send its invite code to your friend, or paste a code a friend sent you
-into "Or join with a code".
+The pane opens by itself the first time, to ask your name. After that
+`/friend` opens it, and "Close" (top right of every page) or `/friend close`
+closes it. It has five pages, each with "‹ Back" at the top left:
 
-Each chat is saved as a contact, with its key, on your computer. You enter a
-code once; after that the contact is in your list with its last message, how
-long ago it came, and a mark when something is unread. A contact shows under
-your friend's name until you give it one of your own with "Rename". You can
-keep up to 20. "‹ Contacts" goes back to the list, "Remove" forgets a contact.
+- **Messages**: your contacts, each with its last message, how long ago it
+  came, and a mark when something is unread. "Open" opens a chat; "New chat"
+  and "Settings" lead to those pages.
+- **New chat**: "Create invite code" starts a chat and gives you a code to
+  send to your friend; or paste a code a friend sent you and press "Join".
+- **A chat**: the messages and the box to write in. Until your friend joins,
+  the invite code and a "Copy invite code" button sit at the top.
+- **Contact** ("Details" in a chat): give the contact a name of your own, copy
+  the invite code again, or remove the contact.
+- **Settings**: your name, and popups on or off, with a button to test them.
+
+Each contact is saved with its key on your computer, so a code is entered
+once. You can keep up to 20 contacts.
 
 When a friend writes, a row appears above the prompt in Claude ("Open" /
 "Dismiss"), and your computer shows a system notification, so you see it with
-Claude in front or not. "Mute" turns both off, and "Test popups" on the list
-of chats fires both so you can check them. "Copy invite code" copies a chat's
-code again.
+Claude in front or not.
 
 ## How it is protected
 

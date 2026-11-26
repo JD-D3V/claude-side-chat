@@ -124,35 +124,49 @@ for (const surface of ['desktop', 'terminal'] as const) {
     expect(toasts.length).toBe(1)
     expect(popups.length).toBe(1)
 
-    // Muted, a new message still arrives but raises nothing.
+    // Back goes to the list of contacts, where the chat is saved under the
+    // friend's name with its last message.
+    await ui.press({ key: 'back' })
+    expect(await ui.find({ type: 'Text', text: /^Messages$/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /^Sam: hey Alex$/ })).toBeDefined()
+
+    // Settings: muted, a new message still arrives but raises nothing.
+    await ui.press({ key: 'settings' })
     await ui.press({ key: 'mute' })
+    expect(await ui.find({ type: 'Text', text: /^Popups are off$/ })).toBeDefined()
+    await ui.press({ key: 'back' })
     post(keys.topic, seal(keys, { from: 'Sam', cid: 'other', ts: clock.now(), text: 'you there?' }) ?? '')
     await clock.advance(12_000)
-    expect(await ui.find({ type: 'Text', text: /^you there\?$/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /^Sam: you there\?$/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /1 new/ })).toBeDefined()
     expect(toasts.length).toBe(1)
     expect(popups.length).toBe(1)
 
-    // Back at the list the chat is saved under the friend's name, and opens
-    // again with no code.
-    await ui.press({ key: 'back' })
-    expect(await ui.find({ key: 'create' })).toBeDefined()
-    const row = await ui.find({ type: 'Button', text: /Sam/ })
-    expect(await ui.find({ type: 'Text', text: /^Sam: you there\?$/ })).toBeDefined()
+    // Open needs no code: the contact remembers its key.
+    const row = await ui.find({ type: 'Button', text: /^Open$/ })
     await ui.press({ key: row?.key ?? '' })
-    expect(await ui.find({ type: 'Text', text: /^hey Alex$/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /^you there\?$/ })).toBeDefined()
 
-    // A name of your own for the contact wins over the one they write under.
-    await ui.press({ key: 'rename-open' })
+    // Details: a name of your own for the contact wins over theirs.
+    await ui.press({ key: 'details' })
     await ui.input({ key: 'rename', text: 'Sammy from school' })
     await ui.press({ key: 'back' })
-    expect(await ui.find({ type: 'Button', text: /Sammy from school/ })).toBeDefined()
-    await ui.press({ key: row?.key ?? '' })
+    expect(await ui.find({ type: 'Text', text: /^Sammy from school$/ })).toBeDefined()
+    await ui.press({ key: 'back' })
+    expect(await ui.find({ type: 'Text', text: /^Sammy from school$/ })).toBeDefined()
 
-    // Removing asks first, then the chat is gone from the list.
+    // New chat is its own page, and Back leaves it without adding anything.
+    await ui.press({ key: 'new' })
+    expect(await ui.find({ key: 'join' })).toBeDefined()
+    await ui.press({ key: 'back' })
+
+    // Removing asks first, then the contact is gone and the list is empty.
+    await ui.press({ key: row?.key ?? '' })
+    await ui.press({ key: 'details' })
     await ui.press({ key: 'leave' })
     await ui.press({ key: 'leave-yes' })
     expect(await ui.find({ key: 'create' })).toBeDefined()
-    expect(await ui.find({ type: 'Button', text: /Sam/ })).toBeUndefined()
+    expect(await ui.find({ type: 'Button', text: /^Open$/ })).toBeUndefined()
 
     // Every request went to the derived topic; the code itself never left.
     const bare = copied.replaceAll('-', '')
@@ -182,7 +196,7 @@ test('a chat saved by the first version becomes a sealed, saved chat', async ($,
   const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
 
   // The one saved chat opens by itself, on its new topic.
-  expect(await ui.find({ type: 'Text', text: /^No messages yet/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^Invite your friend$/ })).toBeDefined()
   expect((await ui.find({ type: 'Text', text: /····/ }))?.text).toBe('aaaa-····-····-dddd')
   const keys = deriveKeys('aaaa-bbbb-cccc-dddd')
   expect(urls.length).toBeGreaterThan(0)
