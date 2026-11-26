@@ -41,7 +41,7 @@ Each contact is saved with its key on your computer, so a code is entered
 once. You can keep up to 20 contacts.
 
 When a friend writes, a row appears above the prompt in Claude ("Open" /
-"Dismiss"), and your computer shows a system notification, so you see it with
+"Close"; it also leaves by itself after two minutes), and your computer shows a system notification, so you see it with
 Claude in front or not.
 
 ## How it is protected

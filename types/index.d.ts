@@ -33,7 +33,7 @@ export type ChatSummary = {
 export type Profile = { name: string; isMuted: boolean }
 
 /** The newest unseen message, for the row above the prompt. */
-export type Alert = { chat: string; from: string; text: string; count: number }
+export type Alert = { chat: string; from: string; text: string; count: number; at: number }
 
 declare module 'claude-code' {
   interface PluginState {

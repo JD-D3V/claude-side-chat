@@ -147,6 +147,13 @@ test('with a live stream a message arrives at once, with every popup', async ($,
   expect(await band.find({ type: 'Text', text: /^-e hello$/ })).toBeDefined()
   await band.press({ key: 'alert-dismiss' })
   expect(await band.find({ type: 'Text', text: /^Sam$/ })).toBeUndefined()
+  // Left alone, the row leaves by itself after two minutes.
+  await ui.press({ key: 'back' })
+  await ui.press({ key: 'settings' })
+  await ui.press({ key: 'test' })
+  expect(await band.find({ type: 'Text', text: /test popup/ })).toBeDefined()
+  await pass(124_000)
+  expect(await band.find({ type: 'Text', text: /test popup/ })).toBeUndefined()
   await band.unmount()
   await ui.unmount()
 })

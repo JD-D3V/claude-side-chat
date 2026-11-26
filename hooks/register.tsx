@@ -35,6 +35,8 @@ const HEARTBEAT_MS = 5000
 // means the connection is dead.
 const STREAM_QUIET_MS = 100000
 const STREAM_MAX_SECONDS = 900
+// How long a new message stays in the row above the prompt if left alone.
+const ALERT_MS = 120000
 const KEEP = 200
 const MAX_CONTACTS = 20
 // A frame is read only if its own clock is within a day of the relay's: an
@@ -422,7 +424,8 @@ async function syncNow($: Engine): Promise<void> {
     if (last === undefined) continue
     const line = oneLine(last.text, 140)
     // In Claude: the row above the prompt, and a toast where one is drawn.
-    await update($, alert, (): Alert => ({ chat: id, from: label, text: line, count: fresh.length }))
+    const at = await $.clock.now()
+    await update($, alert, (): Alert => ({ chat: id, from: label, text: line, count: fresh.length, at }))
     $.ui.toast(`${last.from}: ${line}`, { timeoutMs: 8000 })
     // Out of Claude: one system notification for the machine, whichever
     // session saw the message first.
@@ -640,6 +643,10 @@ async function tick($: Engine, isForced = false): Promise<void> {
       await update($, minute, () => thisMinute)
     }
 
+    // The row above the prompt does not outstay its message.
+    const shown = await read($, alert)
+    if (shown !== null && !(now - shown.at <= ALERT_MS)) await clearAlert($)
+
     const contacts = await loadContacts($)
     const isLive = await ensureStream($, contacts, now)
     const mode = contacts.length === 0 ? '' : isLive ? 'live' : 'poll'
@@ -815,7 +822,8 @@ async function typing($: Engine, id: string): Promise<void> {
 /** Raises every kind of popup once, and says in the pane how each went. */
 async function testPopups($: Engine): Promise<void> {
   const text = 'This is a test popup.'
-  await update($, alert, (): Alert => ({ chat: '', from: TITLE, text, count: 1 }))
+  const at = await $.clock.now()
+  await update($, alert, (): Alert => ({ chat: '', from: TITLE, text, count: 1, at }))
   $.ui.toast(`${TITLE}: ${text}`, { timeoutMs: 8000 })
   const how = await popup($, TITLE, text)
   await $.store.set('lastPopup', how)
@@ -958,6 +966,7 @@ export const register: Register = on => {
         </Text>
         <Button
           key="alert-open"
+          variant="primary"
           label="Open"
           onPress={async () => {
             await $.ui.open({ id: PANE, title: TITLE, focus: true, closeOnEscape: true })
@@ -965,7 +974,7 @@ export const register: Register = on => {
             await clearAlert($)
           }}
         />
-        <Button key="alert-dismiss" plain label="Dismiss" onPress={() => clearAlert($)} />
+        <Button key="alert-dismiss" label="Close" onPress={() => clearAlert($)} />
       </Box>
     )
   })
